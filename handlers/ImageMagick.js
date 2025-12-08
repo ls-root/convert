@@ -10,8 +10,25 @@ async function init () {
   const listDelegates = await Magick.call([], ["convert", "-list", "delegate"]);
 
   const delegates = listDelegates.stdout.slice(5)
-    .map(c => c.split("=")[0].trim())
-    .filter(c => !c.endsWith("<") && !c.includes(":"));
+    .map(c => c.slice(0, c.indexOf("=") + 3))
+    .map(c => ({
+      format: c.slice(0, -4).split(":")[0].trim(),
+      from: c[c.length - 2] !== ">",
+      to: c[c.length - 4] !== " " || c[0] !== " "
+    }));
+
+  for (let i = 0; i < delegates.length; i ++) {
+    const delegate = delegates[i];
+    const duplicates = delegates.filter(c =>
+      c.format === delegate.format && c !== delegate);
+    if (duplicates.some(c => !c.from)) delegate.from = false;
+    if (duplicates.some(c => !c.to)) delegate.to = false;
+    for (const duplicate of duplicates) {
+      delegates.splice(delegates.indexOf(duplicate), 1);
+    }
+  }
+
+  console.log(delegates);
 
   const lines = listFormats.stdout.slice(2).map(c => c.trim());
   for (let line of lines) {
@@ -29,7 +46,8 @@ async function init () {
     const flags = parts[1];
     const description = parts.slice(2).join(" ");
 
-    if (delegates.includes(format)) continue;
+    const delegate = delegates.find(c => c.format === format);
+    if (delegate && !delegate.to && !delegate.from) continue;
     if (description.toLowerCase().includes("mpeg")) continue;
 
     if (flags.length !== 3 || (!flags.endsWith("+") && !flags.endsWith("-"))) continue;
@@ -39,8 +57,8 @@ async function init () {
       format: format,
       extension: format,
       mime: mime.getType(format),
-      from: flags.includes("r"),
-      to: flags.includes("w"),
+      from: (delegate && !delegate.from) ? false : flags.includes("r"),
+      to: (delegate && !delegate.to) ? false : flags.includes("w"),
       internal: format,
     });
 
